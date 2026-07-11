@@ -2,12 +2,12 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>고등어 육지 대탈출</title>
 <style>
-  html,body{margin:0;height:100%;background:#05070f;overflow:hidden;font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;}
+  html,body{margin:0;height:100%;background:#05070f;overflow:hidden;font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;touch-action:none;-webkit-user-select:none;user-select:none;}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
-  canvas{background:#0a1226;box-shadow:0 0 40px #000;image-rendering:auto;}
+  canvas{background:#0a1226;box-shadow:0 0 40px #000;image-rendering:auto;touch-action:none;}
 </style>
 </head>
 <body>
@@ -236,6 +236,10 @@ addEventListener('keyup',e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault
 // 마우스/터치도 스페이스 취급(리허설 편의)
 addEventListener('mousedown',e=>{ if(e.button===0){ initAudio(); playerDown(); } });
 addEventListener('mouseup',e=>{ playerUp(); });
+// 모바일 터치: 탭=헤엄, 홀드=파워대시, 연타=트랩 탈출 (스페이스와 동일)
+addEventListener('touchstart',e=>{ e.preventDefault(); initAudio(); playerDown(); }, {passive:false});
+addEventListener('touchend',e=>{ e.preventDefault(); playerUp(); }, {passive:false});
+addEventListener('touchcancel',e=>{ playerUp(); }, {passive:false});
 
 function jumpZone(i){
   if(S.mode==='TITLE') startGame();
@@ -626,7 +630,7 @@ function drawTrap(){ if(!S.trapped) return;
   ctx.save(); ctx.textAlign='center';
   ctx.font='bold 70px sans-serif'; ctx.lineWidth=8; ctx.strokeStyle='rgba(0,0,0,0.6)';
   ctx.fillStyle=(Math.sin(S.t*22)>0)?'#ffe14d':'#fff';
-  ctx.strokeText('MASH  SPACE!', W/2, H*0.27); ctx.fillText('MASH  SPACE!', W/2, H*0.27);
+  ctx.strokeText('MASH SPACE / TAP!', W/2, H*0.27); ctx.fillText('MASH SPACE / TAP!', W/2, H*0.27);
   const gw=600, gx=W/2-gw/2, gy=H*0.33;
   ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(gx,gy,gw,38);
   ctx.fillStyle='#ff3b3b'; ctx.fillRect(gx,gy,gw*Math.max(0,Math.min(1,S.trapHP==null?1:S.trapHP)),38); // 빨강 100% → 연타로 차감, 0이면 탈출
@@ -866,7 +870,7 @@ function drawTitle(){
   ctx.font='34px sans-serif'; ctx.fillStyle='#bfe9ff';
   ctx.fillText('One button — SPACE / ENTER — swim all the way to land', W/2, H*0.44);
   ctx.font='bold 40px sans-serif'; ctx.fillStyle= (Math.sin(S.t*4)>0)?'#ffd23f':'#fff';
-  ctx.fillText('▶ PRESS SPACE TO START  (Operator: S)', W/2, H*0.62);
+  ctx.fillText('▶ PRESS SPACE or TAP TO START', W/2, H*0.62);
   ctx.font='22px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.6)';
   ctx.fillText('OPERATOR  S start · R reset · T skip tutorial · F finale · 1-4 jump zone', W/2, H*0.9);
   ctx.textAlign='left';
@@ -897,7 +901,7 @@ function drawGameOver(){
   const zn = ZONES[S.deadZone||0] ? ('ZONE '+((S.deadZone||0)+1)+' · '+ZONES[S.deadZone||0].name) : '';
   ctx.fillText('BEST '+S._best.toLocaleString()+'   ·   caught at '+zn, W/2, H*0.59);
   if((S.goT||0)>0.6){ ctx.font='bold 34px sans-serif'; ctx.fillStyle=(Math.sin(S.t*4)>0)?'#ffd23f':'#fff';
-    ctx.fillText('▶ PRESS SPACE to try again   (Operator: R)', W/2, H*0.7); }
+    ctx.fillText('▶ SPACE or TAP to try again', W/2, H*0.7); }
   ctx.textAlign='left';
 }
 function drawFlashMsg(){
