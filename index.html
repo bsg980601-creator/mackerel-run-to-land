@@ -155,10 +155,10 @@ const GAP=270, GAP_TIGHT=225;
 // ---------- 존 정의 ----------
 // dur(초), bg키, 기본 스크롤. 장애물은 타임라인으로 스폰.
 const ZONES=[
-  {key:'z1', name:'심해',   dur:21, speed:455, tint:'#0d2036'},
-  {key:'z2', name:'중층',   dur:27, speed:490, tint:'#0d2b28'},
-  {key:'z3', name:'수면',   dur:27, speed:525, tint:'#123a52'},
-  {key:'z4', name:'갯벌',   dur:21, speed:560, tint:'#3a2a18'},
+  {key:'z1', name:'심해',   sub:'어둠 속을 헤엄쳐라',   dur:21, speed:455, tint:'#0d2036'},
+  {key:'z2', name:'중층',   sub:'그물 지대를 뚫어라',   dur:27, speed:490, tint:'#0d2b28'},
+  {key:'z3', name:'수면',   sub:'갈매기의 하늘 아래',   dur:27, speed:525, tint:'#123a52'},
+  {key:'z4', name:'갯벌',   sub:'육지가 눈앞이다!',     dur:21, speed:560, tint:'#3a2a18'},
 ];
 const FINALE_DUR=10, TUT_DUR=8;
 const TOTAL = TUT_DUR + ZONES.reduce((a,z)=>a+z.dur,0) + FINALE_DUR;
@@ -205,7 +205,7 @@ function flap(){
 }
 function startGame(){
   reset(false);
-  if(S.skipTut){ S.mode='ZONE'; S.zoneIdx=0; S.zoneT=0; S.speed=ZONES[0].speed; S.iframe=ZONE_GRACE; armZone(0); toast('1구간 심해'); }
+  if(S.skipTut){ S.mode='ZONE'; S.zoneIdx=0; S.zoneT=0; S.speed=ZONES[0].speed; S.iframe=ZONE_GRACE; armZone(0); zoneBanner(0); }
 }
 addEventListener('keydown',e=>{
   initAudio();
@@ -232,11 +232,23 @@ function jumpZone(i){
   if(S.mode==='ZONE'){ S.fadeFrom=ZONES[S.zoneIdx].key; S.fadeT=1; }
   S.trapped=false; S.trapObj=null;
   S.mode='ZONE'; S.zoneIdx=i; S.zoneT=0; S.obstacles=[]; S.spawnCursor=0;
-  S.speed=ZONES[i].speed; S.shark=0; S.mud=0; S.iframe=ZONE_GRACE; armZone(i); sfx('zone'); toast('▶ '+(i+1)+'구간 '+ZONES[i].name);
+  S.speed=ZONES[i].speed; S.shark=0; S.mud=0; S.iframe=ZONE_GRACE; armZone(i); sfx('zone'); zoneBanner(i);
 }
 function gotoFinale(){ S.mode='FINALE'; S.finaleT=0; S.obstacles=[]; S.msg=''; S.msgT=0; S.shark=0; spawnConfetti(); sfx('finale'); }
 
 function toast(m){ S.msg=m; S.msgT=1.6; }
+// 존 진입 배너 — 구간명+부제를 크게 2.2초 (관객 연출)
+function zoneBanner(i){ S.bannerMain=(i+1)+'구간 · '+ZONES[i].name; S.bannerSub=ZONES[i].sub; S.bannerT=2.2; }
+function drawBanner(){
+  if(!(S.bannerT>0)) return; const p=S.bannerT/2.2;
+  const a = p>0.85? (1-p)/0.15 : (p<0.25? p/0.25 : 1); // 페이드 인/아웃
+  ctx.save(); ctx.globalAlpha=a; ctx.textAlign='center';
+  ctx.font='bold 96px sans-serif'; ctx.lineWidth=10; ctx.strokeStyle='rgba(0,0,0,0.6)';
+  ctx.strokeText(S.bannerMain, W/2, H*0.3); ctx.fillStyle='#fff'; ctx.fillText(S.bannerMain, W/2, H*0.3);
+  ctx.font='38px sans-serif'; ctx.lineWidth=6;
+  ctx.strokeText(S.bannerSub, W/2, H*0.3+62); ctx.fillStyle='#ffe14d'; ctx.fillText(S.bannerSub, W/2, H*0.3+62);
+  ctx.textAlign='left'; ctx.restore();
+}
 function flash(c,d){ S._flashC=c; S.hitFlash=Math.max(S.hitFlash,d); }
 function addPop(txt,x,y,c){ (S.pops=S.pops||[]).push({txt,x,y,life:1,c:c||'#fff'}); }
 function bestScore(v){ try{ const k='mackerel_best'; const b=+(localStorage.getItem(k)||0); if(v!=null&&v>b){localStorage.setItem(k,v);return v;} return Math.max(b,v||0);}catch(e){ return v||0; } }
@@ -434,6 +446,7 @@ function update(dt){
   if(S.msgT>0) S.msgT-=dt;
   if(S.hitFlash>0) S.hitFlash-=dt;
   if(S.heartLossT>0) S.heartLossT-=dt;
+  if(S.bannerT>0) S.bannerT-=dt;
   if(S.fadeT>0) S.fadeT-=dt/0.7; // 존 전환 크로스페이드(0.7초)
   // 파티클
   for(const p of S.particles){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=400*dt; p.life-=dt; }
@@ -512,7 +525,7 @@ function update(dt){
 
   // 존 종료 → 다음
   if(S.zoneT>=Z.dur){
-    if(S.zoneIdx<ZONES.length-1){ S.fadeFrom=ZONES[S.zoneIdx].key; S.fadeT=1; S.zoneIdx++; S.zoneT=0; S.obstacles=[]; S.iframe=ZONE_GRACE; armZone(S.zoneIdx); sfx('zone'); toast((S.zoneIdx+1)+'구간 '+ZONES[S.zoneIdx].name); }
+    if(S.zoneIdx<ZONES.length-1){ S.fadeFrom=ZONES[S.zoneIdx].key; S.fadeT=1; S.zoneIdx++; S.zoneT=0; S.obstacles=[]; S.iframe=ZONE_GRACE; armZone(S.zoneIdx); sfx('zone'); zoneBanner(S.zoneIdx); }
     else { gotoFinale(); }
   }
 }
@@ -578,7 +591,7 @@ function updateTut(dt){
   } else { // 여정 안내 + 3·2·1 출발
     if(!S.tutDone){ S.tutDone=true; S.cd=3.4; }
     S.cd-=dt;
-    if(S.cd<=0){ S.mode='ZONE'; S.zoneIdx=0; S.zoneT=0; S.speed=ZONES[0].speed; S.iframe=ZONE_GRACE; armZone(0); sfx('zone'); toast('1구간 심해'); }
+    if(S.cd<=0){ S.mode='ZONE'; S.zoneIdx=0; S.zoneT=0; S.speed=ZONES[0].speed; S.iframe=ZONE_GRACE; armZone(0); sfx('zone'); zoneBanner(0); }
   }
 }
 // 튜토리얼 첫 탭 후킹: playerDown에서 처리되도록 flap()이 tutTaps 증가
@@ -644,6 +657,7 @@ function draw(){
   drawHUD();
   if(S.mode==='TUTORIAL') drawTutOverlay();
   drawTrap();
+  drawBanner();
   drawFlashMsg();
 }
 function drawTrap(){ if(!S.trapped) return;
@@ -938,6 +952,8 @@ function drawTitle(){
   ctx.fillText('버튼 하나 — 스페이스 / 엔터 — 육지까지 헤엄쳐라', W/2, H*0.44);
   ctx.font='bold 40px sans-serif'; ctx.fillStyle= (Math.sin(S.t*4)>0)?'#ffd23f':'#fff';
   ctx.fillText('▶ 스페이스 또는 화면을 눌러 시작', W/2, H*0.62);
+  const bs=bestScore(); if(bs>0){ ctx.font='bold 30px sans-serif'; ctx.fillStyle='#7fffd4';
+    ctx.fillText('최고 기록  '+bs.toLocaleString(), W/2, H*0.7); }
   ctx.font='22px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.6)';
   ctx.fillText('오퍼레이터  S 시작 · R 리셋 · T 튜토리얼 생략 · F 피날레 · 1-4 구간 이동', W/2, H*0.9);
   ctx.textAlign='left';
