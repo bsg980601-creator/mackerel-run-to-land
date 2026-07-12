@@ -62,7 +62,7 @@ const BGM = {
 let bgmStep=0, bgmNext=0, bgmKey=null;
 function currentBgmKey(){
   if(S.mode==='GAMEOVER') return null;
-  if(S.mode==='TITLE'||S.mode==='RESULT'||S.mode==='INTRO') return 'title';
+  if(S.mode==='TITLE'||S.mode==='RESULT') return 'title';
   if(S.mode==='FINALE') return 'finale';
   if(S.mode==='TUTORIAL') return 'z1';
   if(S.mode==='ZONE') return 'z'+(S.zoneIdx+1);
@@ -177,6 +177,7 @@ function reset(toTitle=true){
     dashT:0, dashCD:0,
     obstacles:[], spawnCursor:0, particles:[], confetti:[],
     hitFlash:0, tutTaps:0, tutDone:false, tutRings:[], flapAnim:0,
+    tutStage:0, stageT:0, tutObs:[], tutMashed:false,
     shark:0, mud:0, finaleT:0, shownGoal:false,
     skipTut:false, msg:'', msgT:0, shake:0, slowmo:0, amb:[], hitstop:0,
     score:0, pops:[], trapped:false, trapHP:1, trapTime:0, trapObj:null,
@@ -191,8 +192,7 @@ reset(true);
 let downTime=0;
 function playerDown(){
   initAudio();
-  if(S.mode==='TITLE'){ S.mode='INTRO'; S.t=0; sfx('zone'); return; } // 시작 전 스토리·조작 설명
-  if(S.mode==='INTRO'){ startGame(); return; }
+  if(S.mode==='TITLE'){ startGame(); return; }
   if(S.mode==='GAMEOVER'){ if(S.goT>0.6) startGame(); return; }
   if(S.mode==='RESULT'){ reset(true); return; }
   if(S.holding) return;
@@ -227,7 +227,7 @@ addEventListener('keydown',e=>{
   const k=e.key;
   if(k===' '||k==='Enter'){ e.preventDefault(); playerDown(); return; }
   const low=k.toLowerCase();
-  if(low==='s'){ if(S.mode==='TITLE'||S.mode==='INTRO') startGame(); } // 오퍼레이터: 설명 건너뛰고 바로 시작
+  if(low==='s'){ if(S.mode==='TITLE') startGame(); }
   else if(low==='r'){ reset(true); }
   else if(low==='t'){ S.skipTut=!S.skipTut; toast('튜토리얼 생략: '+(S.skipTut?'켬':'끔')); }
   else if(low==='f'){ gotoFinale(); }
@@ -378,6 +378,7 @@ function netTrapObstacle(){
 }
 function releaseTrap(){
   if(!S.trapped) return; S.trapped=false; S.trapTime=0;
+  if(S.mode==='TUTORIAL') S.tutMashed=true; // 튜토리얼: 연타 탈출 학습 완료 표시
   if(S.trapObj){ S.trapObj.broken=true; S.trapObj.caught=false; S.trapObj=null; }
   S.iframe=0.9; S.fishVY=-460; shake(10); flash('#fff',0.2); sfx('netrip');
   spawnParticles(FISH_X,S.fishY,26,'#9fe0ff'); toast('탈출!'); S.score+=60; addPop('+60 탈출',FISH_X,S.fishY-40,'#7fffd4');
@@ -455,7 +456,7 @@ function update(dt){
   for(const p of (S.pops||[])){ p.y-=40*dt; p.life-=dt*0.8; }
   S.pops=(S.pops||[]).filter(p=>p.life>0);
 
-  if(S.mode==='TITLE'||S.mode==='INTRO'){ S.t+=dt; return; }
+  if(S.mode==='TITLE'){ S.t+=dt; return; }
 
   if(S.mode==='TUTORIAL'){ updateTut(dt); return; }
   if(S.mode==='FINALE'){ updateFinale(dt); return; }
@@ -545,21 +546,56 @@ function gameOver(){
 }
 function rectHit(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 
+// 체험형 튜토리얼 — 단계별로 직접 해보며 배운다(실패·페널티 없음)
+// 0: 탭(링 3개 통과) → 1: 길게(연습 그물 찢기) → 2: 연타(일부러 잡혀서 탈출) → 3: 여정 안내+카운트다운
+function practiceNet(dashable){ const n=netTrapObstacle(); n.dashable=dashable; return n; }
+function tutNext(n){ S.tutStage=n; S.stageT=0; sfx('zone'); }
 function updateTut(dt){
-  S.t+=dt; S.tutT=(S.tutT||0)+dt;
-  // 물리는 첫 입력 전까지 정지
+  S.t+=dt; S.tutT=(S.tutT||0)+dt; S.stageT+=dt;
+  // 홀드·대시 타이머(파워대시 연습용)
+  if(S.holding){ S.holdT+=dt; if(S.holdT>=HOLD_FULL) S.charged=true; }
+  if(S.dashCD>0) S.dashCD-=dt;
+  if(S.dashT>0) S.dashT-=dt;
+  if(S.flapAnim>0) S.flapAnim-=dt;
+  // 그물에 잡힘 — 연타 탈출 연습(flap()의 연타 로직이 그대로 동작)
+  if(S.trapped){
+    if(S.trapObj) S.trapObj.update(dt);
+    S.trapHP=Math.min(1,(S.trapHP==null?1:S.trapHP)+dt*0.22); // 본게임보다 살짝 관대
+    S.trapTime=(S.trapTime||0)+dt;
+    S.fishY += Math.sin(S.t*40)*1.4; S.fishVY=0;
+    if(S.trapTime>9) releaseTrap();
+    return;
+  }
+  // 물리(첫 탭 전엔 정지)
   if(S.tutTaps>0){
     S.fishVY+=GRAV*dt; if(S.fishVY>TERM)S.fishVY=TERM; S.fishY+=S.fishVY*dt;
     if(S.fishY<Y_MIN){S.fishY=Y_MIN;S.fishVY=0;} if(S.fishY>Y_MAX){S.fishY=Y_MAX;S.fishVY=0;}
     S.scroll+=380*dt;
-    for(const r of S.tutRings){ r.x-=380*dt; if(!r.hit && Math.abs(r.x-FISH_X)<40 && Math.abs(r.y-S.fishY)<90){ r.hit=true; spawnParticles(r.x,r.y,10,'#7fffd4'); } }
   }
   S.rot=Math.max(-0.4,Math.min(0.6,S.fishVY/1600));
-  if(S.flapAnim>0)S.flapAnim-=dt;
-  // 튜토리얼 종료: 3링 통과 또는 8초
-  const done = S.tutRings.every(r=>r.hit) || S.tutT>=TUT_DUR;
-  if(done && !S.tutDone){ S.tutDone=true; S.cd=3.0; }
-  if(S.tutDone){ S.cd-=dt; if(S.cd<=0){ S.mode='ZONE'; S.zoneIdx=0; S.zoneT=0; S.speed=ZONES[0].speed; S.iframe=ZONE_GRACE; armZone(0); sfx('zone'); toast('1구간 심해'); } }
+  // 연습 그물 이동 + 파워대시로 찢기 판정
+  for(const o of S.tutObs){ o.update(dt);
+    if(S.dashT>0 && !o.broken && o.dashable && Math.abs(o.x-FISH_X)<200){
+      o.broken=true; spawnParticles(o.x,S.fishY,26,'#9fe0ff'); flash('#fff',0.18); shake(10); sfx('netrip'); toast('그물을 찢었다!');
+    } }
+  S.tutObs=S.tutObs.filter(o=>!o.off());
+
+  if(S.tutStage===0){ // 탭 배우기: 링 3개
+    if(S.tutTaps>0) for(const r of S.tutRings){ r.x-=380*dt;
+      if(!r.hit && Math.abs(r.x-FISH_X)<40 && Math.abs(r.y-S.fishY)<90){ r.hit=true; spawnParticles(r.x,r.y,10,'#7fffd4'); sfx('bonus'); } }
+    if(S.tutRings.every(r=>r.hit) || S.stageT>12){ toast('좋아! 다음은 파워대시'); tutNext(1); }
+  } else if(S.tutStage===1){ // 길게 배우기: 그물 찢기 (놓치면 잡힘 → 연타 탈출도 자연 학습)
+    if(S.tutObs.length===0 && !S.tutMashed) S.tutObs.push(practiceNet(true));
+    const a=S.tutObs[0];
+    if((a&&a.broken) || S.tutMashed || S.stageT>22){ S.tutObs=[]; tutNext(S.tutMashed?3:2); }
+  } else if(S.tutStage===2){ // 연타 배우기: 일부러 잡혀보기(이 그물은 찢을 수 없음)
+    if(S.tutObs.length===0 && !S.tutMashed) S.tutObs.push(practiceNet(false));
+    if(S.tutMashed || S.stageT>15){ S.tutObs=[]; tutNext(3); }
+  } else { // 여정 안내 + 3·2·1 출발
+    if(!S.tutDone){ S.tutDone=true; S.cd=3.4; }
+    S.cd-=dt;
+    if(S.cd<=0){ S.mode='ZONE'; S.zoneIdx=0; S.zoneT=0; S.speed=ZONES[0].speed; S.iframe=ZONE_GRACE; armZone(0); sfx('zone'); toast('1구간 심해'); }
+  }
 }
 // 튜토리얼 첫 탭 후킹: playerDown에서 처리되도록 flap()이 tutTaps 증가
 const _flap=flap;
@@ -607,7 +643,6 @@ function drawFinaleExtras(){
 function draw(){
   ctx.clearRect(0,0,W,H);
   if(S.mode==='TITLE'){ drawTitle(); drawFlashMsg(); return; }
-  if(S.mode==='INTRO'){ drawIntro(); drawFlashMsg(); return; }
   if(S.mode==='RESULT'){ drawBG('z5'); drawResult(); return; }
   if(S.mode==='GAMEOVER'){ drawBG(ZONES[S.deadZone||0].key); drawGameOver(); return; }
   if(S.mode==='FINALE'){ drawBG('z5'); drawConfetti(); drawFinaleExtras(); drawFish(); drawHUD(); drawFlashMsg(); return; }
@@ -618,7 +653,7 @@ function draw(){
   drawAmbient();
   // 장애물
   if(S.mode==='ZONE') for(const o of S.obstacles) drawObstacle(o);
-  if(S.mode==='TUTORIAL') drawTutRings();
+  if(S.mode==='TUTORIAL'){ if(S.tutStage===0) drawTutRings(); for(const o of S.tutObs) drawObstacle(o); }
   drawParticles();
   drawFish();
   drawPops();
@@ -831,8 +866,8 @@ function drawHUD(){
   ctx.fillStyle='#ffe14d'; ctx.fillText(Math.floor(S.score).toLocaleString(), W-40, 62);
   ctx.font='18px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.fillText('점수', W-42, 84);
   ctx.textAlign='left';
-  // 파워대시 게이지
-  if(S.mode==='ZONE'){
+  // 파워대시 게이지 (튜토리얼 대시 연습 단계부터 표시)
+  if(S.mode==='ZONE' || (S.mode==='TUTORIAL'&&S.tutStage>=1)){
     const cx=W/2, cy=H-60, rad=26;
     let p = S.holding? Math.min(1,S.holdT/HOLD_FULL) : (S.dashCD>0? 1-S.dashCD/DASH_CD : 1);
     ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=8; ctx.beginPath(); ctx.arc(cx,cy,rad,0,7); ctx.stroke();
@@ -850,16 +885,36 @@ function elapsedTotal(){
   return e;
 }
 
+// 상단 힌트 필(한 줄, 한 번에 하나만)
+function hintPill(txt,y,sub){
+  ctx.save(); ctx.textAlign='center'; ctx.font='bold 46px sans-serif';
+  const w=ctx.measureText(txt).width+90;
+  roundPath(W/2-w/2,y-56,w,86,42); ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fill();
+  ctx.strokeStyle='rgba(127,255,212,0.65)'; ctx.lineWidth=3; ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.fillText(txt,W/2,y+6);
+  if(sub){ ctx.font='26px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.fillText(sub,W/2,y+62); }
+  ctx.textAlign='left'; ctx.restore();
+}
 function drawTutOverlay(){
-  if(S.tutTaps===0){
+  if(S.tutStage===0 && S.tutTaps===0){
     ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';
+    ctx.fillStyle='#ffe14d'; ctx.font='bold 40px sans-serif';
+    ctx.fillText('무리를 잃은 고등어 — 전설의 육지로 간다!', W/2, H*0.3);
     // 스페이스바 아이콘 맥동
     const s=1+Math.sin(S.t*4)*0.06; const bw=520*s, bh=120*s, bx=W/2-bw/2, by=H*0.62;
     ctx.fillStyle='#fff'; roundBlock(bx,by,bw,bh,20);
-    ctx.fillStyle='#0a1226'; ctx.font='bold 44px sans-serif'; ctx.textAlign='center'; ctx.fillText('SPACE', W/2, by+bh/2+16); ctx.textAlign='left';
-    ctx.fillStyle='#fff'; ctx.font='bold 40px sans-serif'; ctx.textAlign='center'; ctx.fillText('눌러서 헤엄치기!', W/2, H*0.42); ctx.textAlign='left';
+    ctx.fillStyle='#0a1226'; ctx.font='bold 44px sans-serif'; ctx.fillText('SPACE', W/2, by+bh/2+16);
+    ctx.fillStyle='#fff'; ctx.font='bold 46px sans-serif'; ctx.fillText('짧게 탭 = 위로 헤엄!', W/2, H*0.44);
+    ctx.textAlign='left'; return;
   }
-  if(S.tutDone){ ctx.fillStyle='#fff'; ctx.font='bold 200px sans-serif'; ctx.textAlign='center'; ctx.fillText(Math.ceil(S.cd), W/2, H/2+70); ctx.textAlign='left'; }
+  if(S.tutStage===0) hintPill('탭! 탭! 물방울 링을 통과해봐', 176);
+  else if(S.tutStage===1 && !S.trapped) hintPill('그물이 온다! 길게 눌렀다 떼기 = 파워대시', 176, '꽉 채워서 떼면 그물을 찢는다 (아래 게이지)');
+  else if(S.tutStage===2 && !S.trapped) hintPill('이번엔 일부러 잡혀보자!', 176, '잡히면 스페이스·화면 연타로 탈출');
+  else if(S.tutStage===3){
+    hintPill('심해 → 중층 → 수면 → 갯벌 → 육지!', 176, '하트 3개 — 부딪히면 하나씩 · 진행바가 다 차면 육지 도착');
+    ctx.fillStyle='#fff'; ctx.font='bold 200px sans-serif'; ctx.textAlign='center'; ctx.fillText(Math.max(1,Math.ceil(S.cd)), W/2, H/2+70); ctx.textAlign='left';
+  }
 }
 
 function drawTitle(){
@@ -877,46 +932,6 @@ function drawTitle(){
   ctx.textAlign='left';
 }
 function roundPath(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
-// 시작 전 설명 화면 — 왜 육지로 가는가(스토리) + 어떻게 조작하는가(3카드)
-function drawIntro(){
-  drawBG('z1');
-  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(0,0,W,H);
-  ctx.textAlign='center';
-  // 스토리
-  ctx.fillStyle='#ffe14d'; ctx.font='bold 62px sans-serif';
-  ctx.fillText('고등어는 왜 육지로 가는가', W/2, 118);
-  ctx.fillStyle='#dfeeff'; ctx.font='29px sans-serif';
-  ctx.fillText('태풍에 무리를 잃고 홀로 남은 고등어 한 마리.', W/2, 186);
-  ctx.fillText('늙은 갈치가 남긴 전설 — "육지에는 그물도, 낚싯바늘도, 좌판도 없단다."', W/2, 230);
-  ctx.fillText('그 말을 믿고, 심해에서 육지까지 헤엄쳐 올라간다.', W/2, 274);
-  // 여정 경로
-  ctx.font='bold 36px sans-serif'; ctx.fillStyle='#7fffd4';
-  ctx.fillText('심해  →  중층  →  수면  →  갯벌  →  육지 도착!', W/2, 352);
-  ctx.font='24px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.75)';
-  ctx.fillText('위쪽 진행바가 끝까지 차면 육지 도착 — 상어·갈매기·그물을 피해 살아남아라', W/2, 394);
-  // 조작 카드 3장
-  const cards=[
-    ['① 짧게 탭','위로 헤엄!','가만히 있으면 가라앉는다'],
-    ['② 길게 눌렀다 떼기','파워대시!','그물을 찢고 잠깐 무적'],
-    ['③ 잡히면 마구 연타','그물 탈출!','빨간 게이지를 0으로'],
-  ];
-  const cw=470, ch=210, gp=55, x0=W/2-(cw*3+gp*2)/2, y0=452;
-  cards.forEach((c,i)=>{
-    const x=x0+i*(cw+gp);
-    roundPath(x,y0,cw,ch,22); ctx.fillStyle='rgba(255,255,255,0.09)'; ctx.fill();
-    ctx.strokeStyle='rgba(127,255,212,0.55)'; ctx.lineWidth=3; ctx.stroke();
-    ctx.fillStyle='#fff'; ctx.font='bold 36px sans-serif'; ctx.fillText(c[0], x+cw/2, y0+62);
-    ctx.fillStyle='#ffe14d'; ctx.font='bold 42px sans-serif'; ctx.fillText(c[1], x+cw/2, y0+124);
-    ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='24px sans-serif'; ctx.fillText(c[2], x+cw/2, y0+172);
-  });
-  // 목숨 안내
-  ctx.font='28px sans-serif'; ctx.fillStyle='#ffb0b0';
-  ctx.fillText('❤️❤️❤️ 하트 3개 — 부딪히면 하나씩 잃고, 다 잃으면 게임오버 · 무지개는 보너스 점수!', W/2, y0+ch+68);
-  // 출발
-  ctx.font='bold 44px sans-serif'; ctx.fillStyle=(Math.sin(S.t*4)>0)?'#ffd23f':'#fff';
-  ctx.fillText('▶ 스페이스 또는 화면을 눌러 출발!', W/2, H*0.92);
-  ctx.textAlign='left';
-}
 function drawResult(){
   if(S._best==null){ S.score+=S.lives*300; S._best=bestScore(Math.floor(S.score)); } // 완주 보너스 + 최고점 기록
   ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(0,0,W,H);
