@@ -62,7 +62,7 @@ const BGM = {
 let bgmStep=0, bgmNext=0, bgmKey=null;
 function currentBgmKey(){
   if(S.mode==='GAMEOVER') return null;
-  if(S.mode==='TITLE'||S.mode==='RESULT') return 'title';
+  if(S.mode==='TITLE'||S.mode==='RESULT'||S.mode==='INTRO') return 'title';
   if(S.mode==='FINALE') return 'finale';
   if(S.mode==='TUTORIAL') return 'z1';
   if(S.mode==='ZONE') return 'z'+(S.zoneIdx+1);
@@ -191,7 +191,8 @@ reset(true);
 let downTime=0;
 function playerDown(){
   initAudio();
-  if(S.mode==='TITLE'){ startGame(); return; }
+  if(S.mode==='TITLE'){ S.mode='INTRO'; S.t=0; sfx('zone'); return; } // 시작 전 스토리·조작 설명
+  if(S.mode==='INTRO'){ startGame(); return; }
   if(S.mode==='GAMEOVER'){ if(S.goT>0.6) startGame(); return; }
   if(S.mode==='RESULT'){ reset(true); return; }
   if(S.holding) return;
@@ -226,7 +227,7 @@ addEventListener('keydown',e=>{
   const k=e.key;
   if(k===' '||k==='Enter'){ e.preventDefault(); playerDown(); return; }
   const low=k.toLowerCase();
-  if(low==='s'){ if(S.mode==='TITLE') startGame(); }
+  if(low==='s'){ if(S.mode==='TITLE'||S.mode==='INTRO') startGame(); } // 오퍼레이터: 설명 건너뛰고 바로 시작
   else if(low==='r'){ reset(true); }
   else if(low==='t'){ S.skipTut=!S.skipTut; toast('튜토리얼 생략: '+(S.skipTut?'켬':'끔')); }
   else if(low==='f'){ gotoFinale(); }
@@ -454,7 +455,7 @@ function update(dt){
   for(const p of (S.pops||[])){ p.y-=40*dt; p.life-=dt*0.8; }
   S.pops=(S.pops||[]).filter(p=>p.life>0);
 
-  if(S.mode==='TITLE'){ S.t+=dt; return; }
+  if(S.mode==='TITLE'||S.mode==='INTRO'){ S.t+=dt; return; }
 
   if(S.mode==='TUTORIAL'){ updateTut(dt); return; }
   if(S.mode==='FINALE'){ updateFinale(dt); return; }
@@ -606,6 +607,7 @@ function drawFinaleExtras(){
 function draw(){
   ctx.clearRect(0,0,W,H);
   if(S.mode==='TITLE'){ drawTitle(); drawFlashMsg(); return; }
+  if(S.mode==='INTRO'){ drawIntro(); drawFlashMsg(); return; }
   if(S.mode==='RESULT'){ drawBG('z5'); drawResult(); return; }
   if(S.mode==='GAMEOVER'){ drawBG(ZONES[S.deadZone||0].key); drawGameOver(); return; }
   if(S.mode==='FINALE'){ drawBG('z5'); drawConfetti(); drawFinaleExtras(); drawFish(); drawHUD(); drawFlashMsg(); return; }
@@ -872,6 +874,47 @@ function drawTitle(){
   ctx.fillText('▶ 스페이스 또는 화면을 눌러 시작', W/2, H*0.62);
   ctx.font='22px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.6)';
   ctx.fillText('오퍼레이터  S 시작 · R 리셋 · T 튜토리얼 생략 · F 피날레 · 1-4 구간 이동', W/2, H*0.9);
+  ctx.textAlign='left';
+}
+function roundPath(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+// 시작 전 설명 화면 — 왜 육지로 가는가(스토리) + 어떻게 조작하는가(3카드)
+function drawIntro(){
+  drawBG('z1');
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';
+  // 스토리
+  ctx.fillStyle='#ffe14d'; ctx.font='bold 62px sans-serif';
+  ctx.fillText('고등어는 왜 육지로 가는가', W/2, 118);
+  ctx.fillStyle='#dfeeff'; ctx.font='29px sans-serif';
+  ctx.fillText('태풍에 무리를 잃고 홀로 남은 고등어 한 마리.', W/2, 186);
+  ctx.fillText('늙은 갈치가 남긴 전설 — "육지에는 그물도, 낚싯바늘도, 좌판도 없단다."', W/2, 230);
+  ctx.fillText('그 말을 믿고, 심해에서 육지까지 헤엄쳐 올라간다.', W/2, 274);
+  // 여정 경로
+  ctx.font='bold 36px sans-serif'; ctx.fillStyle='#7fffd4';
+  ctx.fillText('심해  →  중층  →  수면  →  갯벌  →  육지 도착!', W/2, 352);
+  ctx.font='24px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.75)';
+  ctx.fillText('위쪽 진행바가 끝까지 차면 육지 도착 — 상어·갈매기·그물을 피해 살아남아라', W/2, 394);
+  // 조작 카드 3장
+  const cards=[
+    ['① 짧게 탭','위로 헤엄!','가만히 있으면 가라앉는다'],
+    ['② 길게 눌렀다 떼기','파워대시!','그물을 찢고 잠깐 무적'],
+    ['③ 잡히면 마구 연타','그물 탈출!','빨간 게이지를 0으로'],
+  ];
+  const cw=470, ch=210, gp=55, x0=W/2-(cw*3+gp*2)/2, y0=452;
+  cards.forEach((c,i)=>{
+    const x=x0+i*(cw+gp);
+    roundPath(x,y0,cw,ch,22); ctx.fillStyle='rgba(255,255,255,0.09)'; ctx.fill();
+    ctx.strokeStyle='rgba(127,255,212,0.55)'; ctx.lineWidth=3; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='bold 36px sans-serif'; ctx.fillText(c[0], x+cw/2, y0+62);
+    ctx.fillStyle='#ffe14d'; ctx.font='bold 42px sans-serif'; ctx.fillText(c[1], x+cw/2, y0+124);
+    ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='24px sans-serif'; ctx.fillText(c[2], x+cw/2, y0+172);
+  });
+  // 목숨 안내
+  ctx.font='28px sans-serif'; ctx.fillStyle='#ffb0b0';
+  ctx.fillText('❤️❤️❤️ 하트 3개 — 부딪히면 하나씩 잃고, 다 잃으면 게임오버 · 무지개는 보너스 점수!', W/2, y0+ch+68);
+  // 출발
+  ctx.font='bold 44px sans-serif'; ctx.fillStyle=(Math.sin(S.t*4)>0)?'#ffd23f':'#fff';
+  ctx.fillText('▶ 스페이스 또는 화면을 눌러 출발!', W/2, H*0.92);
   ctx.textAlign='left';
 }
 function drawResult(){
