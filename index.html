@@ -108,6 +108,8 @@ loadImg('e_crab','assets/sprites/e_crab.png');
 loadImg('e_puffer','assets/sprites/e_puffer.png');
 // 장애물 프롭(도형 대체 스프라이트)
 ['coral','net','wave','hook','rock','seaweed'].forEach(n=>loadImg('prop_'+n,'assets/sprites/prop_'+n+'.png'));
+// 카메오: 사자머리 물고기(비충돌 배경 캐릭터)
+loadImg('lionfish','assets/sprites/lionfish.png');
 // 스프라이트를 사각영역에 채워 그림(flipV=상하반전). 세그먼트형 장애물용.
 function drawSpriteRect(key,x,y,w,h,flipV){ const a=A[key]; if(!a||!a.ok) return false;
   ctx.save(); if(flipV){ ctx.translate(x,y+h); ctx.scale(1,-1); ctx.drawImage(a.img,0,0,w,h); } else ctx.drawImage(a.img,x,y,w,h); ctx.restore(); return true; }
@@ -179,7 +181,8 @@ function reset(toTitle=true){
     shark:0, mud:0, finaleT:0, shownGoal:false,
     skipTut:keepSkip, msg:'', msgT:0, shake:0, slowmo:0, amb:[], hitstop:0,
     score:0, pops:[], trapped:false, trapHP:1, trapTime:0, trapObj:null,
-    fadeT:0, fadeFrom:null
+    fadeT:0, fadeFrom:null,
+    lion:null, lionNext:10+Math.random()*8, lionSeen:false
   };
   // 튜토리얼 링 3개
   for(let i=0;i<3;i++) S.tutRings.push({x:W+ i*520 + 500, y:H/2, hit:false});
@@ -234,7 +237,7 @@ function jumpZone(i){
   S.mode='ZONE'; S.zoneIdx=i; S.zoneT=0; S.obstacles=[]; S.spawnCursor=0;
   S.speed=ZONES[i].speed; S.shark=0; S.mud=0; S.iframe=ZONE_GRACE; armZone(i); sfx('zone'); zoneBanner(i);
 }
-function gotoFinale(){ S.mode='FINALE'; S.finaleT=0; S.obstacles=[]; S.msg=''; S.msgT=0; S.shark=0; spawnConfetti(); sfx('finale'); }
+function gotoFinale(){ S.mode='FINALE'; S.finaleT=0; S.obstacles=[]; S.msg=''; S.msgT=0; S.shark=0; S.lion=null; S.lionNext=2.5; spawnConfetti(); sfx('finale'); }
 
 function toast(m){ S.msg=m; S.msgT=1.6; }
 // 존 진입 배너 — 구간명+부제를 크게 2.2초 (관객 연출)
@@ -262,6 +265,42 @@ function spawnParticles(x,y,n,c){
 function spawnConfetti(){
   const cols=['#ff5a5a','#ffd23f','#3fd9ff','#5aff8f','#c77dff','#ffffff'];
   for(let i=0;i<160;i++) S.confetti.push({x:Math.random()*W,y:-Math.random()*H,vx:(Math.random()-0.5)*120,vy:120+Math.random()*260,r:6+Math.random()*8,c:cols[i%cols.length],rot:Math.random()*6,vr:(Math.random()-0.5)*10});
+}
+
+// ---------- 카메오: 사자머리 물고기 ----------
+// 비충돌 배경 캐릭터 — 가끔 왼쪽에서 나타나 유유히 헤엄쳐 지나간다(공연용 웃음 포인트)
+function updateLion(dt){
+  if(!S.lion){
+    S.lionNext-=dt;
+    if(S.lionNext<=0){
+      const fin = S.mode==='FINALE';
+      const inMud = (S.mode==='ZONE' && S.zoneIdx===3); // 존4 갯벌은 수면 아래만 물
+      const yMin = fin? H*0.45 : (inMud? WATERLINE+110 : Y_MIN+130);
+      const yMax = fin? H*0.55 : Y_MAX-90;
+      S.lion={x:-320, baseY:yMin+Math.random()*(yMax-yMin), ph:Math.random()*6,
+        spd:230+Math.random()*90, w:fin?200:260+Math.random()*70};
+      if(!S.lionSeen){ S.lionSeen=true; toast('어?! 사자 물고기다!'); }
+    }
+    return;
+  }
+  const L=S.lion;
+  L.x += L.spd*dt; L.ph += dt*2.2;
+  if(S.mode==='ZONE' && S.zoneIdx===3 && L.baseY<WATERLINE+110) L.baseY+=160*dt; // 존4 진입 시 물속으로 잠수
+  if(Math.random()<0.08) spawnParticles(L.x-L.w*0.45, L.baseY+Math.sin(L.ph)*26, 1, '#ffe9b0');
+  const exitX = S.mode==='FINALE'? W*0.42 : W+340; // 피날레: 배경 바다는 왼쪽뿐 → 먼바다로 퇴장
+  if(L.x > exitX){ S.lion=null; S.lionNext=16+Math.random()*14; }
+}
+function drawLion(){
+  const L=S.lion; if(!L) return;
+  const y=L.baseY+Math.sin(L.ph)*26;
+  // 피날레: 먼바다로 사라지듯 페이드아웃
+  const a = S.mode==='FINALE'? Math.max(0,Math.min(1,(W*0.52-L.x)/220)) : 1;
+  ctx.save(); ctx.globalAlpha=a; ctx.translate(L.x,y); ctx.rotate(Math.sin(L.ph*0.9)*0.06);
+  if(!drawSprite('lionfish',0,0,L.w)){ // 폴백: 갈기 원+물고기 몸
+    ctx.fillStyle='#d99a3a'; ctx.beginPath(); ctx.arc(L.w*0.35,0,46,0,7); ctx.fill();
+    ctx.fillStyle='#6fb3c9'; ctx.beginPath(); ctx.ellipse(-20,0,70,28,0,0,7); ctx.fill();
+  }
+  ctx.restore();
 }
 
 // ---------- 장애물 스폰 (존별 타임라인) ----------
@@ -503,6 +542,7 @@ function update(dt){
   S.scroll += S.speed*dt;
   S.score += S.speed*dt*0.02; // 거리 점수(빠를수록 더)
   S.zoneT += dt; S.t += dt;
+  updateLion(dt);
 
   // 스폰
   for(const ev of SPAWN_TABLE[S.zoneIdx]){ if(S.zoneT>=(ev._t!=null?ev._t:ev.t) && !ev.done){ ev.done=true; S.obstacles.push(ev.make()); } }
@@ -612,6 +652,7 @@ function updateFinale(dt){
     S.rot = Math.sin(T*12)*0.55;                 // 몸 비틀기
     if(Math.floor(T*6)%1===0 && hop<2 && Math.random()<0.3) spawnParticles(FISH_X,SAND+10,4,'#e8d7b0'); // 모래 튐
   }
+  updateLion(dt);
   for(const p of S.confetti){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.vr*dt; if(p.y>H+20){p.y=-20;p.x=Math.random()*W;} }
   if(S.finaleT>=FINALE_DUR){ S.mode='RESULT'; S.resT=0; }
 }
@@ -642,12 +683,13 @@ function draw(){
   if(S.mode==='TITLE'){ drawTitle(); drawFlashMsg(); return; }
   if(S.mode==='RESULT'){ drawBG('z5'); drawResult(); return; }
   if(S.mode==='GAMEOVER'){ drawBG(ZONES[S.deadZone||0].key); drawGameOver(); return; }
-  if(S.mode==='FINALE'){ drawBG('z5'); drawConfetti(); drawFinaleExtras(); drawFish(); drawHUD(); drawFlashMsg(); return; }
+  if(S.mode==='FINALE'){ drawBG('z5'); drawLion(); drawConfetti(); drawFinaleExtras(); drawFish(); drawHUD(); drawFlashMsg(); return; }
 
   const zoneKey = S.mode==='TUTORIAL' ? 'z1' : ZONES[S.zoneIdx].key;
   drawZoneBG(zoneKey);
   drawWaterline();
   drawAmbient();
+  drawLion(); // 카메오는 장애물 뒤 배경 레이어
   // 장애물
   if(S.mode==='ZONE') for(const o of S.obstacles) drawObstacle(o);
   if(S.mode==='TUTORIAL'){ if(S.tutStage===0) drawTutRings(); for(const o of S.tutObs) drawObstacle(o); }
