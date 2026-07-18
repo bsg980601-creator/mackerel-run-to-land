@@ -179,7 +179,8 @@ function reset(toTitle=true){
     shark:0, mud:0, finaleT:0, shownGoal:false,
     skipTut:keepSkip, msg:'', msgT:0, shake:0, slowmo:0, amb:[], hitstop:0,
     score:0, pops:[], trapped:false, trapHP:1, trapTime:0, trapObj:null,
-    fadeT:0, fadeFrom:null
+    fadeT:0, fadeFrom:null,
+    landing:false, legs:0, walk:0, walkOff:false, fishXOff:0  // 육지 다리 엔딩
   };
   // 튜토리얼 링 3개
   for(let i=0;i<3;i++) S.tutRings.push({x:W+ i*520 + 500, y:H/2, hit:false});
@@ -601,19 +602,33 @@ flap=function(){ if(S.mode==='TUTORIAL'){ S.tutTaps++; } _flap(); };
 function updateFinale(dt){
   S.finaleT+=dt; S.t+=dt; const T=S.finaleT;
   const SAND=H*0.76;
-  if(T<1.8){ // 1) 수면 위로 힘차게 솟구침(아직 헤엄)
+  if(T<1.8){ // 1) 수면 위로 솟구침(헤엄)
     S.scroll += 220*dt;
     S.fishY += (H*0.34 - S.fishY)*Math.min(1,dt*2.6); S.rot=-0.35; S.landing=false;
-  } else { // 2) 모래에 착지 → 팔딱팔딱(헤엄 아님)
+    S.legs=0; S.walkOff=false; S.fishXOff=0;
+  } else if(T<2.7){ // 2) 착지 → 잠깐 팔딱 → 다리가 돋는다
     if(!S.landing){ S.landing=true; shake(10); sfx('zone'); spawnParticles(FISH_X,SAND,20,'#ffe1a0'); }
-    S.scroll += 40*dt;
-    const hop=Math.abs(Math.sin(T*6.0))*30;      // 팔딱 점프
+    S.scroll += 30*dt;
+    const bt=T-1.8;
+    const hop=Math.max(0, Math.abs(Math.sin(bt*7.0))*22*(1-bt/0.9)); // 팔딱은 점점 잦아듦
     S.fishY = SAND - hop;
-    S.rot = Math.sin(T*12)*0.55;                 // 몸 비틀기
-    if(Math.floor(T*6)%1===0 && hop<2 && Math.random()<0.3) spawnParticles(FISH_X,SAND+10,4,'#e8d7b0'); // 모래 튐
+    S.rot = Math.sin(T*11)*0.4*(1-Math.min(1,bt/0.9));               // 비틀기도 잦아듦
+    S.legs = Math.min(1, Math.max(0,(bt-0.3))/0.7);                  // 0.3s 뒤부터 0.7s간 다리 돋음
+    if(S.legs>0 && S.legs<0.3 && Math.random()<0.4) spawnParticles(FISH_X,SAND+8,3,'#dff3ff'); // 돋을 때 반짝
+  } else if(T<3.5){ // 3) 두 발로 딛고 선다(자세 안정)
+    S.legs=1; S.rot += (0 - S.rot)*Math.min(1,dt*6);                 // 수평으로 반듯이
+    S.fishY += (SAND - S.fishY)*Math.min(1,dt*6);
+    S.walk = (S.walk||0) + dt*3;                                     // 제자리 준비 스텝
+  } else { // 4) 두 발로 걸어서 화면 밖으로 퇴장 → 엔딩
+    S.walkOff=true;
+    S.walk = (S.walk||0) + dt*9;                                     // 걷기 사이클
+    S.fishXOff = (S.fishXOff||0) + 340*dt;                           // 오른쪽으로 성큼성큼(약 4초에 퇴장)
+    S.fishY = SAND - Math.abs(Math.sin(S.walk))*5;                   // 걸음마다 살짝 들썩
+    S.rot = Math.sin(S.walk*2)*0.05;                                 // 뒤뚱
+    if(FISH_X + S.fishXOff > W + 200){ S.mode='RESULT'; S.resT=0; }  // 완전히 나가면 결과
   }
   for(const p of S.confetti){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.vr*dt; if(p.y>H+20){p.y=-20;p.x=Math.random()*W;} }
-  if(S.finaleT>=FINALE_DUR){ S.mode='RESULT'; S.resT=0; }
+  if(S.finaleT>=FINALE_DUR && !S.walkOff){ S.mode='RESULT'; S.resT=0; } // 안전장치
 }
 // 육지 도착 연출 보강: 모래 위 친구들이 모여들고 축하 텍스트
 function drawFinaleExtras(){
@@ -806,8 +821,9 @@ function drawFish(){
   // 기본 유영 상태는 애니메이션 스윔 사용(charge/dash/hit/joy는 정적 포즈 유지)
   const useAnim = (key==='fish_idle'||key==='fish_flap') && A['anim_fish'] && A['anim_fish'].ok;
   ctx.save();
-  ctx.translate(FISH_X,S.fishY); ctx.rotate(S.rot);
+  ctx.translate(FISH_X+(S.fishXOff||0),S.fishY); ctx.rotate(S.rot);
   if(S.iframe>0 && Math.floor(S.iframe*30)%2===0) ctx.globalAlpha=0.5;
+  drawFishLegs();  // 육지에서 돋아난 다리 — 몸통보다 먼저(뒤에) 그린다
   ctx.shadowColor='rgba(255,240,150,0.9)'; ctx.shadowBlur=18; // 림 글로우(가독성)
   if(useAnim){
     drawAnimSprite('fish', 0, 0, 230, false);
@@ -822,6 +838,69 @@ function drawFish(){
     ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(30,-6,8,0,7); ctx.fill();
     ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(32,-6,4,0,7); ctx.fill();
   }
+  ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+// 육지에 나온 고등어: 얇은 막대 다리 + 커다란 컨버스 운동화. 고등어 몸은 플레이 스프라이트 그대로.
+// S.legs(0→1): 다리 돋아남 진행. S.walk: 걷기 사이클 위상. S.walkOff: 걸어 나가는 중.
+const _easeOut=t=>1-Math.pow(1-t,3);
+// 커다란 컨버스 하이탑 운동화 하나. (x,y)=발목, up=신발 위쪽 방향각(0=아래로 서있음), sc=크기
+function drawSneaker(x,y,tilt,sc){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(tilt); ctx.scale(sc,sc);
+  // 밑창(흰 고무) — 앞코가 머리쪽(+x)으로 크게
+  ctx.fillStyle='#f4efe6'; ctx.strokeStyle='#20242a'; ctx.lineWidth=2.2; ctx.lineJoin='round';
+  ctx.beginPath();
+  ctx.moveTo(-13,6); ctx.lineTo(20,6);
+  ctx.quadraticCurveTo(30,6, 30,1);       // 앞코 둥글게
+  ctx.quadraticCurveTo(30,-3, 22,-3);
+  ctx.lineTo(-13,-3); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // 밑창 줄무늬
+  ctx.strokeStyle='#c9c1b2'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(-11,1.5); ctx.lineTo(26,1.5); ctx.stroke();
+  // 갑피(빨간 캔버스 하이탑)
+  ctx.fillStyle='#d8493b'; ctx.strokeStyle='#20242a'; ctx.lineWidth=2.2;
+  ctx.beginPath();
+  ctx.moveTo(-13,-3); ctx.lineTo(22,-3);
+  ctx.quadraticCurveTo(24,-16, 12,-20);   // 앞코~발등
+  ctx.quadraticCurveTo(2,-24, -4,-24);    // 발목 입구
+  ctx.lineTo(-13,-24); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // 발목 밴드(하이탑)
+  ctx.fillStyle='#c23e31'; ctx.beginPath(); ctx.moveTo(-13,-24); ctx.lineTo(-4,-24); ctx.lineTo(-4,-14); ctx.lineTo(-13,-14); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // 흰 앞코 캡 + 동그란 사이드 패치(컨버스 상징)
+  ctx.fillStyle='#f4efe6'; ctx.beginPath(); ctx.moveTo(22,-3); ctx.quadraticCurveTo(24,-12,14,-16); ctx.quadraticCurveTo(24,-9,22,-3); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#f4efe6'; ctx.beginPath(); ctx.arc(6,-9,4.2,0,7); ctx.fill(); ctx.strokeStyle='#20242a'; ctx.lineWidth=1; ctx.stroke();
+  ctx.fillStyle='#d8493b'; ctx.beginPath(); ctx.arc(6,-9,1.6,0,7); ctx.fill();
+  // 끈(라이트닝 지그재그)
+  ctx.strokeStyle='#f4efe6'; ctx.lineWidth=1.6;
+  for(let i=0;i<3;i++){ const yy=-20+i*4.5; ctx.beginPath(); ctx.moveTo(-2,yy); ctx.lineTo(10,yy+2); ctx.stroke(); }
+  ctx.restore();
+}
+function drawFishLegs(){
+  const g=Math.max(0,Math.min(1,S.legs||0));
+  if(g<=0) return;
+  const gg=_easeOut(g);
+  const bellyY=22;                    // 배 아래 다리가 붙는 지점
+  const walk=S.walk||0;
+  const walking=(S.walkOff===true);
+  const shoeSc=0.86*Math.min(1,gg*1.3); // 신발은 다리보다 조금 먼저 커진다(부각)
+  ctx.save();
+  // 신발이 확 튀게 → 다리는 아주 얇게, 발끝의 큰 신발이 주인공
+  for(const leg of [{x:14,ph:0},{x:-10,ph:Math.PI}]){
+    const swing = walking ? Math.sin(walk*2 + leg.ph) : 0;
+    const lift  = walking ? Math.max(0,Math.sin(walk*2+leg.ph))*18 : 0;  // 크게 들어 신발 부각
+    const legLen = 54*gg;                                                // 더 길게 → 성큼거림
+    const hipX=leg.x, hipY=bellyY;
+    const kneeX=hipX+swing*10, kneeY=hipY+legLen*0.5-lift*0.35;
+    const ankX=hipX+swing*18, ankY=hipY+legLen-lift;
+    // 얇은 막대 다리(검은 실루엣)
+    ctx.strokeStyle='#20242a'; ctx.lineWidth=3.4; ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath(); ctx.moveTo(hipX,hipY); ctx.lineTo(kneeX,kneeY); ctx.lineTo(ankX,ankY); ctx.stroke();
+    // 커다란 컨버스 운동화 — 든 발일수록 앞코가 위로 들린다(항상 앞코는 오른쪽)
+    if(gg>0.25){ const tilt=-lift*0.018; drawSneaker(ankX, ankY, tilt, shoeSc); }
+  }
+  // 막 돋아날 때 반짝(팟) 이펙트
+  if(g>0.05 && g<0.5){ const f=(0.5-g)/0.45; ctx.globalAlpha=f*0.7; ctx.strokeStyle='#fff'; ctx.lineWidth=2.5;
+    for(const lx of [14,-10]){ for(let i=0;i<4;i++){ const a=Math.PI*0.25+i*0.5; ctx.beginPath(); ctx.moveTo(lx,bellyY+6); ctx.lineTo(lx+Math.cos(a)*15,bellyY+6+Math.sin(a)*15); ctx.stroke(); } } ctx.globalAlpha=1; }
   ctx.restore();
 }
 
