@@ -807,8 +807,7 @@ function drawGull(o){
 
 function drawFish(){
   let key='fish_idle';
-  if((S.mode==='FINALE'&&S.landing)||S.mode==='RESULT') key='fish_joy'; // 착지=기쁨 포즈(팔딱)
-  else if(S.mode==='FINALE') key='fish_idle';                            // 상승 중=헤엄
+  if(S.mode==='FINALE') key='fish_idle';                                 // 육지에서도 플레이와 동일한 스윔 물고기(투명·포즈 불일치 방지)
   else if(S.iframe>0 && Math.floor(S.iframe*20)%2===0) key='fish_hit';
   else if(S.flapAnim>0 || S.fishVY<-120) key='fish_flap';
   const a=A[key];
@@ -822,7 +821,9 @@ function drawFish(){
   const useAnim = (key==='fish_idle'||key==='fish_flap') && A['anim_fish'] && A['anim_fish'].ok;
   ctx.save();
   ctx.translate(FISH_X+(S.fishXOff||0),S.fishY); ctx.rotate(S.rot);
-  if(S.iframe>0 && Math.floor(S.iframe*30)%2===0) ctx.globalAlpha=0.5;
+  // 육지 도착 연출: 물고기+다리+신발을 통째로 크게 (착지부터 커지고 걸어나갈 때까지 유지)
+  if(S.mode==='FINALE'&&S.landing){ const bg=1.55; ctx.scale(bg,bg); }
+  if(S.mode!=='FINALE' && S.iframe>0 && Math.floor(S.iframe*30)%2===0) ctx.globalAlpha=0.5; // 육지에선 반투명 깜빡임 없음
   drawFishLegs();  // 육지에서 돋아난 다리 — 몸통보다 먼저(뒤에) 그린다
   ctx.shadowColor='rgba(255,240,150,0.9)'; ctx.shadowBlur=18; // 림 글로우(가독성)
   if(useAnim){
